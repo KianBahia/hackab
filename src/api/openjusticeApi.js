@@ -146,11 +146,12 @@ async function streamFlowResponse(conversationId, apiKey, apiUrl, onUpdate) {
     complete: false,
   };
 
-  // The API key handles routing to the correct flow ("tester") and chat ("test convo")
-  // We only need to pass the conversationId - the API will use the flow configured in the API key
-  const streamUrl = `${apiUrl}/nap/stream?conversationId=${encodeURIComponent(
-    conversationId
-  )}`;
+  // The API key is configured for "tester" flow, but we still need to pass dialogFlowId
+  // in the query string as per the API specification
+  // The API key ensures it routes to the correct flow even if we specify it
+  const streamUrl = `${apiUrl}/nap/stream?dialogFlowId=${encodeURIComponent(
+    "tester"
+  )}&conversationId=${encodeURIComponent(conversationId)}`;
 
   console.log(`Streaming flow response for conversation ${conversationId}`);
   console.log("Stream URL:", streamUrl);
@@ -216,26 +217,82 @@ async function streamFlowResponse(conversationId, apiKey, apiUrl, onUpdate) {
 }
 
 /**
+ * Get list of conversations to find the "test convo" chat
+ * The API key should route to "test convo", but we may need the conversationId
+ * @param {string} apiKey - API key for authentication
+ * @param {string} apiUrl - Base API URL
+ * @returns {Promise<string|null>} Conversation ID for "test convo" or null
+ */
+async function getTestConversationId(apiKey, apiUrl) {
+  try {
+    const response = await fetch(`${apiUrl}/conversation`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (response.ok) {
+      const conversations = await response.json();
+      if (Array.isArray(conversations)) {
+        // Try to find "test convo" conversation
+        const testConvo = conversations.find(
+          (conv) =>
+            conv.title?.toLowerCase() === "test convo" ||
+            conv.title?.toLowerCase() === "testconvo"
+        );
+        if (testConvo?.id) {
+          console.log("Found 'test convo' conversation:", testConvo.id);
+          return testConvo.id;
+        }
+        // If not found, use the first conversation (API key might route to it)
+        if (conversations[0]?.id) {
+          console.log(
+            "Using first available conversation:",
+            conversations[0].id
+          );
+          return conversations[0].id;
+        }
+      }
+    }
+  } catch (error) {
+    console.log("Could not fetch conversations:", error);
+  }
+  return null;
+}
+
+/**
  * Send a message with image and description to OpenJustice
  * The API key automatically routes to the configured flow ("tester") and chat ("test convo")
  * @param {string} description - User's description/prompt
  * @param {Object} uploadedFile - Uploaded file metadata {resourceId, fileName}
  * @param {string} apiKey - API key for authentication
  * @param {string} apiUrl - Base API URL
+ * @param {string|null} conversationId - Optional conversation ID (API key will route if null)
  * @returns {Promise<{conversationId: string, response?: any}>}
  */
 export async function sendMessageWithImage(
   description,
   uploadedFile,
   apiKey,
-  apiUrl
+  apiUrl,
+  conversationId = null
 ) {
+  // Required fields based on API schema:
+  // - title: string (can be null)
+  // - conversationId: string (required, but API key may handle routing)
+  // - prompt: string (can be null)
+  // - messages[0].model: string (required)
   const messagePayload = {
-    prompt: description,
+    conversationId: conversationId, // API key should route to "test convo" if null
+    title: description.substring(0, 100) || null, // Use description as title, or null
+    prompt: description || null,
     messages: [
       {
         role: "user",
         content: description,
+        model: "gpt-4o-mini-2024-07-18", // Required field - using a vision-capable model for images
         metadata: {
           resources: [
             {
@@ -247,9 +304,6 @@ export async function sendMessageWithImage(
       },
     ],
   };
-
-  // Don't specify conversationId - let the API key route to the configured chat ("test convo")
-  // Don't specify dialogFlowId - let the API key route to the configured flow ("tester")
 
   const response = await fetch(`${apiUrl}/conversation/send-message`, {
     method: "POST",
@@ -268,14 +322,14 @@ export async function sendMessageWithImage(
   const result = await response.json();
   console.log("Message sent, API response:", result);
 
-  const conversationId = result.conversationId;
+  const returnedConversationId = result.conversationId || conversationId;
 
-  if (!conversationId) {
+  if (!returnedConversationId) {
     throw new Error("API did not return a conversation ID");
   }
 
   return {
-    conversationId: conversationId,
+    conversationId: returnedConversationId,
     response: result,
   };
 }
@@ -302,26 +356,41 @@ export async function processImageWithDescription(
   const uploadedFile = await uploadFile(image, apiKey, apiUrl);
   console.log("File uploaded:", uploadedFile);
 
-  // Step 2: Send message with image and description
+  // Step 2: Try to get the conversation ID for "test convo"
+  // The API key should route to "test convo", but we need the conversationId for the API call
+  // If we can't find it, the API should create/return the correct one based on the API key
+  console.log("Getting conversation ID for 'test convo'...");
+  let conversationId = await getTestConversationId(apiKey, apiUrl);
+
+  if (!conversationId) {
+    console.log(
+      "Could not find 'test convo' conversation. API will create/return one based on API key configuration."
+    );
+  }
+
+  // Step 3: Send message with image and description
   // The API key will automatically route to:
   // - Flow: "tester"
   // - Chat: "test convo"
+  // If conversationId is null, the API should create/return the conversation ID for "test convo"
   console.log("Sending message with image and description...");
   const messageResult = await sendMessageWithImage(
     description,
     uploadedFile,
     apiKey,
-    apiUrl
+    apiUrl,
+    conversationId
   );
 
-  const conversationId = messageResult.conversationId;
-  console.log("Conversation ID:", conversationId);
+  const finalConversationId = messageResult.conversationId;
+  console.log("Conversation ID:", finalConversationId);
 
-  // Step 3: Stream the flow response
+  // Step 4: Stream the flow response
   // The flow should automatically process the image and description
+  // The API key handles routing to the "tester" flow
   console.log("Streaming flow response...");
   const fullResponse = await streamFlowResponse(
-    conversationId,
+    finalConversationId,
     apiKey,
     apiUrl,
     onUpdate
