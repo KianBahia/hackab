@@ -1,6 +1,7 @@
 import { useState } from "react";
 import LandingPage from "./LandingPage";
 import { processImageWithDescription } from "./api/openjusticeApi";
+import titleLogo from "../public/title2.svg";
 
 function App() {
   const [hasLaunched, setHasLaunched] = useState(false);
@@ -95,9 +96,14 @@ function App() {
       </div>
 
       <div className="w-full max-w-3xl mx-auto">
-        <h1 className="text-center mb-8 text-5xl md:text-6xl font-black text-black tracking-tight drop-shadow-lg">
-          hackab
-        </h1>
+        <div className="relative z-30 pt-8 md:pt-12 flex justify-center">
+          <img
+            src={titleLogo}
+            alt="hackab logo"
+            className="w-56 md:w-80 select-none"
+            draggable={false}
+          />
+        </div>
         <p className="text-center text-black/80 mb-12 text-lg md:text-xl font-medium">
           Upload an image and describe what you'd like to do with it
         </p>

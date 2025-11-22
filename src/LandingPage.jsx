@@ -1,4 +1,8 @@
 import { useState } from "react";
+import titleDark from "../public/titleDark.svg";
+import titleCute from "../public/titleCute.svg";
+import melody from "../public/melody.png";
+import melody2 from "../public/melody2.png";
 
 function LandingPage({ onLaunch, onHome, isDarkMode, setIsDarkMode }) {
   return (
@@ -65,10 +69,13 @@ function DarkModeDesign({ onLaunch }) {
   return (
     <div className="relative min-h-screen w-full overflow-visible bg-[#ff4201] flex flex-col">
       {/* Title at top */}
-      <div className="relative z-30 pt-8 md:pt-12">
-        <h1 className="text-8xl md:text-9xl font-black text-black text-center tracking-tight drop-shadow-lg">
-          hackab
-        </h1>
+      <div className="relative z-30 pt-8 md:pt-12 flex justify-center">
+        <img
+          src={titleDark}
+          alt="hackab logo"
+          className="w-56 md:w-80 select-none"
+          draggable={false}
+        />
       </div>
 
       {/* Spiky Hexagon at center */}
@@ -148,24 +155,43 @@ function DarkModeDesign({ onLaunch }) {
 // Light Mode Design (placeholder - to be designed later)
 function LightModeDesign({ onLaunch }) {
   return (
-    <div className="relative min-h-screen w-full overflow-visible bg-white flex flex-col">
+    <div className="relative min-h-screen w-full overflow-visible vichy-bg flex flex-col">
       {/* Title at top */}
-      <div className="relative z-30 pt-8 md:pt-12">
-        <h1 className="text-8xl md:text-9xl font-black text-gray-800 text-center tracking-tight drop-shadow-lg">
-          hackab
-        </h1>
+      <div className="relative z-30 pt-8 md:pt-12 flex justify-center">
+        <img
+          src={titleCute}
+          alt="hackab logo"
+          className="w-56 md:w-80 select-none"
+          draggable={false}
+        />
       </div>
 
-      {/* Placeholder content - to be designed */}
-      <div className="flex-1 flex items-center justify-center relative z-10">
-        <div className="text-center">
-          <p className="text-2xl text-gray-600 mb-8">Light Mode Design</p>
-          <p className="text-lg text-gray-500">Coming soon...</p>
-        </div>
-      </div>
+      {/* Decorative melody image on the right for medium+ screens */}
+      <img
+        src={melody}
+        alt="melody"
+        className="hidden md:block absolute right-12 lg:right-20 top-1/2 translate-y-[-25%] w-40 opacity-90 select-none tweak-effect idle"
+        draggable={false}
+      />
 
-      {/* Launch button at bottom */}
-      <div className="relative z-30 pb-8 md:pb-12 flex justify-center">
+      {/* Decorative melody2 centered and larger on medium+ screens */}
+      <img
+        src={melody2}
+        alt="melody2"
+        className="hidden md:block absolute left-6 lg:left-12 top-1/2 -translate-y-1/2 w-56 md:w-72 opacity-90 select-none tweak-effect idle z-0 pointer-events-none"
+        draggable={false}
+      />
+
+    <div
+      className="flex-1 flex items-center justify-center relative z-10"
+      style={{ overflow: "visible" }}
+    >
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="vichy-bg" style={{ height: "100vh" }}></div>
+      </div>
+    </div>
+  {/* Launch button at bottom */}
+  <div className="relative z-30 pb-8 md:pb-12 flex justify-center mt-6 md:mt-10">
         <button
           onClick={onLaunch}
           className="px-16 py-5 text-3xl font-black text-white bg-gray-800 cursor-pointer transition-all duration-200 hover:scale-105 active:scale-100"

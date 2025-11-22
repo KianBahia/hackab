@@ -28,3 +28,52 @@
     animation: sun-pulse 4s ease-in-out infinite;
   }
 }
+
+.vichy-bg {
+  /* Colors */
+  --light: #ffffff;
+  --dark: hsl(306, 38%, 84%);
+
+  background-image:
+    /* vertical stripes */
+    linear-gradient(
+      90deg,
+      var(--dark) 25%,
+      var(--light) 25% 50%,
+      var(--dark) 50% 75%,
+      var(--light) 75%
+    ),
+    /* horizontal stripes */
+    linear-gradient(
+      0deg,
+      var(--dark) 25%,
+      var(--light) 25% 50%,
+      var(--dark) 50% 75%,
+      var(--light) 75%
+    );
+  
+  /* size of one check block */
+  background-size: 80px 80px;
+  background-blend-mode: multiply; /* creates the darker intersections */
+  display: block;
+}
+
+/* subtle tweak effect for decorative images */
+@keyframes tweak-idle {
+  0% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-4px) rotate(-1deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+.tweak-effect {
+  transition: transform 220ms cubic-bezier(.2,.9,.2,1), opacity 200ms;
+  will-change: transform, opacity;
+}
+.tweak-effect:hover {
+  transform: translateY(-6px) rotate(-2deg) scale(1.02);
+  opacity: 1;
+}
+.tweak-effect.idle {
+  animation: tweak-idle 4.5s ease-in-out infinite;
+}
+
