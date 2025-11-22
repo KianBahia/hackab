@@ -37,32 +37,83 @@ export function getApiConfig() {
 }
 
 /**
+ * Upload a file to OpenJustice
+ * @param {File} file - The file to upload
+ * @param {string} apiKey - API key for authentication
+ * @param {string} apiUrl - Base API URL
+ * @returns {Promise<{resourceId: string, fileName: string}>}
+ */
+export async function uploadFile(file, apiKey, apiUrl) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${apiUrl}/conversation/resources/upload-file`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to upload file: ${response.status} ${errorText}`);
+  }
+
+  const result = await response.json();
+
+  if (!result.ok || !result.resourceId) {
+    throw new Error("Failed to upload file: Invalid response");
+  }
+
+  return {
+    resourceId: result.resourceId,
+    fileName: result.fileName,
+  };
+}
+
+/**
  * Send a message to the conversation
  * @param {string} message - The message to send
  * @param {string} apiKey - API key for authentication
  * @param {string} apiUrl - Base API URL
  * @param {string} conversationId - Conversation ID
+ * @param {Array|null} uploadedFiles - Optional array of uploaded file resources [{id, name}]
  * @returns {Promise<string>} The conversation ID
  */
-async function sendMessage(message, apiKey, apiUrl, conversationId) {
+async function sendMessage(
+  message,
+  apiKey,
+  apiUrl,
+  conversationId,
+  uploadedFiles = null
+) {
+  const messagePayload = {
+    conversationId: conversationId,
+    title: null,
+    prompt: null,
+    messages: [
+      {
+        role: "user",
+        content: message,
+        model: "gpt-4o-mini-2024-07-18",
+        ...(uploadedFiles &&
+          uploadedFiles.length > 0 && {
+            metadata: {
+              resources: uploadedFiles,
+            },
+          }),
+      },
+    ],
+  };
+
   const response = await fetch(`${apiUrl}/conversation/send-message`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      conversationId: conversationId,
-      title: null,
-      prompt: null,
-      messages: [
-        {
-          role: "user",
-          content: message,
-          model: "gpt-4o-mini-2024-07-18",
-        },
-      ],
-    }),
+    body: JSON.stringify(messagePayload),
   });
 
   if (!response.ok) {
@@ -265,13 +316,33 @@ async function startStream(
  * Main function that sends a message and streams the response
  *
  * @param {string} message - User's text message
+ * @param {File|null} image - Optional image file to upload and attach
  * @param {Function} onUpdate - Callback to update the response as it streams (receives text string)
  * @returns {Promise<Object>} The complete response
  */
-export async function processTextMessage(message, onUpdate) {
+export async function processTextMessage(message, image = null, onUpdate) {
   const { apiKey, apiUrl, dialogFlowId, conversationId } = getApiConfig();
 
-  // Step 1: Send message to the conversation
+  // Step 1: Upload image if provided
+  let uploadedFiles = null;
+  if (image) {
+    console.log("Uploading image file...");
+    try {
+      const uploadedFile = await uploadFile(image, apiKey, apiUrl);
+      console.log("Image uploaded:", uploadedFile);
+      uploadedFiles = [
+        {
+          id: uploadedFile.resourceId,
+          name: uploadedFile.fileName,
+        },
+      ];
+    } catch (error) {
+      console.error("Failed to upload image:", error);
+      throw error;
+    }
+  }
+
+  // Step 2: Send message to the conversation (with image if provided)
   console.log(`Sending message to conversation ${conversationId}...`);
   let returnedConversationId;
   try {
@@ -279,7 +350,8 @@ export async function processTextMessage(message, onUpdate) {
       message,
       apiKey,
       apiUrl,
-      conversationId
+      conversationId,
+      uploadedFiles
     );
     console.log("Message sent. Conversation ID:", returnedConversationId);
   } catch (error) {
@@ -287,7 +359,7 @@ export async function processTextMessage(message, onUpdate) {
     throw error;
   }
 
-  // Step 2: Start streaming the response
+  // Step 3: Start streaming the response
   console.log("Starting stream...");
   const fullResponse = await startStream(
     returnedConversationId,
@@ -298,5 +370,8 @@ export async function processTextMessage(message, onUpdate) {
   );
 
   fullResponse.message = message;
+  if (uploadedFiles) {
+    fullResponse.uploadedFile = uploadedFiles[0];
+  }
   return fullResponse;
 }

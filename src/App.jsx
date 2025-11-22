@@ -1,19 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import LandingPage from "./LandingPage";
 import { processTextMessage } from "./api/openjusticeApi";
 
 function App() {
   const [hasLaunched, setHasLaunched] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode
+  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const [message, setMessage] = useState("");
-  const [response, setResponse] = useState("");
+  const [messages, setMessages] = useState([]); // Chat messages array
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const messagesEndRef = useRef(null);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
   const handleGoHome = () => {
     setHasLaunched(false);
+    setImage(null);
+    setImagePreview(null);
     setMessage("");
-    setResponse("");
+    setMessages([]);
     setError(null);
     setIsLoading(false);
   };
@@ -29,93 +39,289 @@ function App() {
     );
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImage(file);
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setImage(null);
+    setImagePreview(null);
+    // Reset file input
+    const fileInput = document.getElementById("image-upload");
+    if (fileInput) {
+      fileInput.value = "";
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!message.trim()) return;
 
+    const userMessage = message.trim();
+    const currentImage = image;
+
+    // Add user message to chat
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        content: userMessage,
+        image: currentImage ? imagePreview : null,
+      },
+    ]);
+
+    // Clear input only (keep image for next message)
+    setMessage("");
+    // Don't clear image - it stays in the upload area until user replaces it
+
     setIsLoading(true);
     setError(null);
-    setResponse("");
+
+    // Add placeholder for AI response
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: "",
+        isLoading: true,
+      },
+    ]);
 
     try {
-      const fullResponse = await processTextMessage(
-        message,
-        (updatedResponse) => {
-          // This callback receives the streaming text output
-          setResponse(updatedResponse);
-        }
-      );
-      // Final update with complete response if needed
-      if (fullResponse.outputText) {
-        setResponse(fullResponse.outputText);
-      }
+      await processTextMessage(userMessage, currentImage, (updatedResponse) => {
+        // Update the last AI message as it streams
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          // Find the last assistant message and update it
+          for (let i = newMessages.length - 1; i >= 0; i--) {
+            if (newMessages[i].role === "assistant") {
+              newMessages[i] = {
+                role: "assistant",
+                content: updatedResponse,
+                isLoading: false,
+              };
+              break;
+            }
+          }
+          return newMessages;
+        });
+      });
     } catch (err) {
       setError(
         err.message || "An error occurred while processing your request."
       );
-      setResponse("");
+      // Update the last AI message with error
+      setMessages((prev) => {
+        const newMessages = [...prev];
+        for (let i = newMessages.length - 1; i >= 0; i--) {
+          if (newMessages[i].role === "assistant") {
+            newMessages[i] = {
+              role: "assistant",
+              content: `Error: ${err.message || "An error occurred"}`,
+              isLoading: false,
+            };
+            break;
+          }
+        }
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center p-4 md:p-8 bg-[#ff4201]">
+    <div className="relative min-h-screen bg-[#ff4201] flex flex-col">
       {/* Home button and Toggle switch in top left */}
       <div className="absolute top-6 left-6 z-40 flex gap-3 items-center">
         <HomeButton onHome={handleGoHome} />
         <ModeToggle isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />
       </div>
 
-      <div className="w-full max-w-3xl mx-auto">
-        <h1 className="text-center mb-8 text-5xl md:text-6xl font-black text-black tracking-tight drop-shadow-lg">
+      {/* Title */}
+      <div className="pt-16 pb-4 text-center">
+        <h1 className="text-4xl md:text-5xl font-black text-black tracking-tight drop-shadow-lg">
           hackab
         </h1>
-        <p className="text-center text-black/80 mb-12 text-lg md:text-xl font-medium">
-          Enter your message
-        </p>
+      </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-8">
-          <div className="flex flex-col gap-3">
-            <label htmlFor="message" className="font-bold text-base text-black">
-              Message
+      {/* Split layout: Left (Image) and Right (Chat) */}
+      <div className="flex-1 flex flex-col md:flex-row gap-4 p-4 md:p-6 max-w-7xl mx-auto w-full">
+        {/* Left Side: Image Upload and Display */}
+        <div className="w-full md:w-1/2 flex flex-col">
+          <div className="flex-1 border-4 border-black/30 rounded-xl bg-black/20 backdrop-blur-sm p-4 flex flex-col">
+            <label
+              htmlFor="image-upload"
+              className="cursor-pointer flex-1 flex items-center justify-center"
+            >
+              <div className="w-full h-full border-4 border-dashed border-black/30 rounded-lg transition-all duration-300 hover:border-black/50 flex items-center justify-center relative min-h-[400px]">
+                {imagePreview ? (
+                  <div className="relative w-full h-full flex items-center justify-center p-4">
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      className="max-w-full max-h-full rounded-lg object-contain"
+                    />
+                    <button
+                      type="button"
+                      className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/80 text-white border-2 border-white text-xl cursor-pointer flex items-center justify-center leading-none transition-all duration-200 hover:bg-red-600 hover:scale-110"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveImage();
+                      }}
+                      aria-label="Remove image"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-4 text-black/70 text-center p-8">
+                    <svg
+                      width="64"
+                      height="64"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className="text-black"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p className="m-0 text-lg font-bold text-black">
+                      Click to upload an image
+                    </p>
+                    <span className="text-sm text-black/60">
+                      or drag and drop
+                    </span>
+                  </div>
+                )}
+              </div>
             </label>
-            <textarea
-              id="message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Enter your message here..."
-              className="w-full p-4 border-4 border-black/30 rounded-lg bg-black/20 backdrop-blur-sm text-black font-inherit text-base resize-y transition-all duration-300 focus:outline-none focus:border-black/50 focus:bg-black/30 placeholder:text-black/50 font-medium"
-              rows="5"
+            <input
+              id="image-upload"
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="hidden"
             />
           </div>
+        </div>
 
-          <button
-            type="submit"
-            className="px-8 py-4 text-lg font-bold text-white bg-black border-4 border-white rounded-lg cursor-pointer transition-all duration-300 mt-2 hover:scale-105 hover:bg-gray-900 hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
-            disabled={!message.trim() || isLoading}
-          >
-            {isLoading ? "Processing..." : "Send Message"}
-          </button>
-        </form>
-
-        {/* Error display */}
-        {error && (
-          <div className="mt-6 p-4 bg-red-500/20 border-2 border-red-500 rounded-lg">
-            <p className="text-red-800 font-bold">Error:</p>
-            <p className="text-red-700">{error}</p>
+        {/* Right Side: Chat Interface */}
+        <div
+          className="w-full md:w-1/2 flex flex-col border-4 border-black/30 rounded-xl bg-black/20 backdrop-blur-sm overflow-hidden"
+          style={{ height: "calc(100vh - 200px)", maxHeight: "800px" }}
+        >
+          {/* Chat Messages Area - Fixed height with internal scrolling */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            {messages.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-black/60">
+                <p>Start a conversation...</p>
+              </div>
+            ) : (
+              <>
+                {messages.map((msg, index) => (
+                  <div
+                    key={index}
+                    className={`flex ${
+                      msg.role === "user" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        msg.role === "user"
+                          ? "bg-black/40 text-white"
+                          : "bg-black/30 text-black"
+                      }`}
+                    >
+                      {msg.image && (
+                        <img
+                          src={msg.image}
+                          alt="User uploaded"
+                          className="max-w-full max-h-48 rounded mb-2 object-contain"
+                        />
+                      )}
+                      <div className="whitespace-pre-wrap font-mono text-sm">
+                        {msg.content || (msg.isLoading ? "..." : "")}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </>
+            )}
+            {isLoading && messages.length > 0 && (
+              <div className="flex justify-start">
+                <div className="bg-black/30 text-black rounded-lg p-3">
+                  <div className="flex gap-1">
+                    <span className="animate-bounce">.</span>
+                    <span
+                      className="animate-bounce"
+                      style={{ animationDelay: "0.1s" }}
+                    >
+                      .
+                    </span>
+                    <span
+                      className="animate-bounce"
+                      style={{ animationDelay: "0.2s" }}
+                    >
+                      .
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Response display */}
-        {response && (
-          <div className="mt-6 flex flex-col gap-3">
-            <label className="font-bold text-base text-black">Response</label>
-            <div className="w-full p-4 border-4 border-black/30 rounded-lg bg-black/20 backdrop-blur-sm text-black font-mono text-sm min-h-[200px] whitespace-pre-wrap">
-              {response}
+          {/* Error display */}
+          {error && (
+            <div className="mx-4 mb-2 p-3 bg-red-500/20 border-2 border-red-500 rounded-lg">
+              <p className="text-red-800 font-bold text-sm">Error:</p>
+              <p className="text-red-700 text-sm">{error}</p>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Input Area */}
+          <form
+            onSubmit={handleSubmit}
+            className="p-4 border-t-4 border-black/30"
+          >
+            <div className="flex gap-2">
+              <textarea
+                id="message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Type your message..."
+                className="flex-1 p-3 border-4 border-black/30 rounded-lg bg-black/20 backdrop-blur-sm text-black font-inherit text-sm resize-none transition-all duration-300 focus:outline-none focus:border-black/50 focus:bg-black/30 placeholder:text-black/50"
+                rows="2"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+              />
+              <button
+                type="submit"
+                className="px-6 py-3 font-bold text-white bg-black border-4 border-white rounded-lg cursor-pointer transition-all duration-300 hover:scale-105 hover:bg-gray-900 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                disabled={!message.trim() || isLoading}
+              >
+                {isLoading ? "..." : "Send"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
