@@ -13,6 +13,20 @@ function App() {
     // Ref for hidden file input
     const hiddenFileInputRef = useRef(null);
 
+    // Download hash as a text file with a nice format
+    const handleDownloadHash = (fileName) => {
+      if (!fileHash || fileHash === 'Error hashing file') return;
+      const content = `Secure Download Certificate\n\nOriginal File: ${fileName}\nSHA-256 Hash:\n${fileHash}\n`;
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName || 'file'}-certificate.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
   const [hasLaunched, setHasLaunched] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode
   const [image, setImage] = useState(null);
@@ -266,7 +280,7 @@ function App() {
                 </div>
               </div>
             </div>
-            {/* Download Button at the Bottom */}
+            {/* Hash Button at the Bottom */}
             <div className="fixed bottom-0 left-0 w-full flex justify-center items-end pb-6 z-50">
               <div className="flex flex-col items-center min-w-[300px]">
                 <input
