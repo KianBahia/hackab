@@ -14,6 +14,7 @@ function App() {
   const [messages, setMessages] = useState([]); // Chat messages array
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [pendingExecutionId, setPendingExecutionId] = useState(null); // Track execution ID for resuming
   const messagesEndRef = useRef(null);
 
   // Auto-scroll to bottom when messages change
@@ -29,6 +30,7 @@ function App() {
     setMessages([]);
     setError(null);
     setIsLoading(false);
+    setPendingExecutionId(null); // Clear execution ID when going home
   };
 
   if (!hasLaunched) {
@@ -100,24 +102,47 @@ function App() {
     ]);
 
     try {
-      await processTextMessage(userMessage, currentImage, (updatedResponse) => {
-        // Update the last AI message as it streams
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          // Find the last assistant message and update it
-          for (let i = newMessages.length - 1; i >= 0; i--) {
-            if (newMessages[i].role === "assistant") {
-              newMessages[i] = {
-                role: "assistant",
-                content: updatedResponse,
-                isLoading: false,
-              };
-              break;
+      // Use pendingExecutionId if available (for resuming conversations)
+      const executionIdToUse = pendingExecutionId;
+
+      // Clear the pending execution ID since we're using it now
+      if (executionIdToUse) {
+        setPendingExecutionId(null);
+      }
+
+      const response = await processTextMessage(
+        userMessage,
+        currentImage,
+        (updatedResponse) => {
+          // Update the last AI message as it streams
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            // Find the last assistant message and update it
+            for (let i = newMessages.length - 1; i >= 0; i--) {
+              if (newMessages[i].role === "assistant") {
+                newMessages[i] = {
+                  role: "assistant",
+                  content: updatedResponse,
+                  isLoading: false,
+                };
+                break;
+              }
             }
-          }
-          return newMessages;
-        });
-      });
+            return newMessages;
+          });
+        },
+        executionIdToUse // Pass execution ID to resume conversation if available
+      );
+
+      // If the response includes an executionId (API is awaiting more input), store it
+      if (response.executionId && response.awaitingInput) {
+        setPendingExecutionId(response.executionId);
+        console.log("Stored execution ID for resuming:", response.executionId);
+      } else if (response.executionId) {
+        // If we got an executionId but not awaiting input, clear any pending one
+        // (execution completed)
+        setPendingExecutionId(null);
+      }
     } catch (err) {
       setError(
         err.message || "An error occurred while processing your request."
@@ -275,6 +300,19 @@ function App() {
                 </div>
               )}
             </div>
+
+            {/* Awaiting input indicator */}
+            {pendingExecutionId && !isLoading && (
+              <div className="mx-4 mb-2 p-3 bg-blue-500/20 border-2 border-blue-500 rounded-lg">
+                <p className="text-blue-800 font-bold text-sm">
+                  ⏳ Waiting for your response...
+                </p>
+                <p className="text-blue-700 text-xs">
+                  The API needs more information. Type your reply below to
+                  continue.
+                </p>
+              </div>
+            )}
 
             {/* Error display */}
             {error && (

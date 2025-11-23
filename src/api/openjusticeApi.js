@@ -196,7 +196,9 @@ function processEvent(eventText, fullResponse, onUpdate) {
         const input = parsed;
         const inputInfo = `\n\n[Awaiting user input - Execution ID: ${input.executionId}]\n`;
         fullResponse.outputText += inputInfo;
+        fullResponse.executionId = input.executionId; // Store execution ID for resuming
         fullResponse.complete = true;
+        fullResponse.awaitingInput = true; // Flag to indicate we're waiting for user input
         onUpdate(fullResponse.outputText);
         break;
       }
@@ -214,10 +216,11 @@ function processEvent(eventText, fullResponse, onUpdate) {
 /**
  * Stream the dialog flow execution
  * Based on the example implementation
- * @param {string} conversationId - The conversation ID
+ * @param {string} conversationId - The conversation ID (required for new execution)
  * @param {string} apiKey - API key for authentication
  * @param {string} apiUrl - Base API URL
- * @param {string|null} dialogFlowId - Dialog flow ID (required by API endpoint)
+ * @param {string|null} dialogFlowId - Dialog flow ID (required for new execution, not needed for resume)
+ * @param {string|null} executionId - Execution ID (required for resume, not needed for new execution)
  * @param {Function} onUpdate - Callback to update the response as it streams
  * @returns {Promise<Object>} The complete response object
  */
@@ -226,25 +229,38 @@ async function startStream(
   apiKey,
   apiUrl,
   dialogFlowId,
+  executionId,
   onUpdate
 ) {
-  // The API endpoint requires dialogFlowId even though the API key handles routing
-  // Following the example pattern: dialogFlowId + conversationId for new execution
-  // You can find your dialogFlowId in the OpenJustice dashboard where you created the API key
-  if (!dialogFlowId) {
-    throw new Error(
-      "dialogFlowId is required for streaming. Please set VITE_DIALOG_FLOW_ID in your .env file.\n" +
-        "You can find your dialogFlowId in the OpenJustice dashboard where you created the API key."
-    );
+  let url;
+
+  // If we have an executionId, resume the existing execution
+  if (executionId) {
+    url = `${apiUrl}/nap/stream?executionId=${encodeURIComponent(executionId)}`;
+    console.log("Resuming stream with executionId:", executionId);
+    console.log("Stream URL:", url);
+  } else {
+    // Otherwise, start a new execution (requires dialogFlowId and conversationId)
+    if (!dialogFlowId) {
+      throw new Error(
+        "dialogFlowId is required for new execution. Please set VITE_DIALOG_FLOW_ID in your .env file.\n" +
+          "You can find your dialogFlowId in the OpenJustice dashboard where you created the API key."
+      );
+    }
+    if (!conversationId) {
+      throw new Error(
+        "conversationId is required for new execution. Please set VITE_CONVERSATION_ID in your .env file."
+      );
+    }
+
+    url = `${apiUrl}/nap/stream?dialogFlowId=${encodeURIComponent(
+      dialogFlowId
+    )}&conversationId=${encodeURIComponent(conversationId)}`;
+
+    console.log("Starting new stream for conversation:", conversationId);
+    console.log("Using dialogFlowId:", dialogFlowId);
+    console.log("Stream URL:", url);
   }
-
-  const url = `${apiUrl}/nap/stream?dialogFlowId=${encodeURIComponent(
-    dialogFlowId
-  )}&conversationId=${encodeURIComponent(conversationId)}`;
-
-  console.log("Starting stream for conversation:", conversationId);
-  console.log("Using dialogFlowId:", dialogFlowId);
-  console.log("Stream URL:", url);
 
   try {
     const response = await fetch(url, {
@@ -269,8 +285,10 @@ async function startStream(
     const fullResponse = {
       success: true,
       conversationId: conversationId,
+      executionId: executionId || null,
       outputText: "",
       complete: false,
+      awaitingInput: false,
     };
 
     const reader = response.body.getReader();
@@ -318,10 +336,80 @@ async function startStream(
  * @param {string} message - User's text message
  * @param {File|null} image - Optional image file to upload and attach
  * @param {Function} onUpdate - Callback to update the response as it streams (receives text string)
+ * @param {string|null} executionId - Optional execution ID to resume an existing conversation
  * @returns {Promise<Object>} The complete response
  */
-export async function processTextMessage(message, image = null, onUpdate) {
+export async function processTextMessage(
+  message,
+  image = null,
+  onUpdate,
+  executionId = null
+) {
   const { apiKey, apiUrl, dialogFlowId, conversationId } = getApiConfig();
+
+  // If we have an executionId, we're resuming a conversation
+  // First, send the user's response message, then resume the stream
+  if (executionId) {
+    console.log("Resuming conversation with executionId:", executionId);
+
+    // Step 1: Upload image if provided
+    let uploadedFiles = null;
+    if (image) {
+      console.log("Uploading image file...");
+      try {
+        const uploadedFile = await uploadFile(image, apiKey, apiUrl);
+        console.log("Image uploaded:", uploadedFile);
+        uploadedFiles = [
+          {
+            id: uploadedFile.resourceId,
+            name: uploadedFile.fileName,
+          },
+        ];
+      } catch (error) {
+        console.error("Failed to upload image:", error);
+        throw error;
+      }
+    }
+
+    // Step 2: Send the user's response message
+    console.log(
+      `Sending response message to conversation ${conversationId}...`
+    );
+    let returnedConversationId;
+    try {
+      returnedConversationId = await sendMessage(
+        message,
+        apiKey,
+        apiUrl,
+        conversationId,
+        uploadedFiles
+      );
+      console.log(
+        "Response message sent. Conversation ID:",
+        returnedConversationId
+      );
+    } catch (error) {
+      console.error("Failed to send response message:", error);
+      throw error;
+    }
+
+    // Step 3: Resume the stream with the executionId
+    console.log("Resuming stream with executionId...");
+    const fullResponse = await startStream(
+      returnedConversationId,
+      apiKey,
+      apiUrl,
+      dialogFlowId,
+      executionId,
+      onUpdate
+    );
+
+    fullResponse.message = message;
+    if (uploadedFiles) {
+      fullResponse.uploadedFile = uploadedFiles[0];
+    }
+    return fullResponse;
+  }
 
   // Step 1: Upload image if provided
   let uploadedFiles = null;
@@ -366,6 +454,7 @@ export async function processTextMessage(message, image = null, onUpdate) {
     apiKey,
     apiUrl,
     dialogFlowId,
+    null, // No executionId for new conversation
     onUpdate
   );
 
