@@ -191,13 +191,28 @@ function LightModeDesign({ onLaunch }) {
       </div>
     </div>
   {/* Launch button at bottom */}
-  <div className="relative z-30 pb-8 md:pb-12 flex justify-center mt-6 md:mt-10">
-        <button
-          onClick={onLaunch}
-          className="px-16 py-5 text-3xl font-black text-white bg-gray-800 cursor-pointer transition-all duration-200 hover:scale-105 active:scale-100"
-        >
-          <span className="tracking-wider">LAUNCH</span>
-        </button>
+      <div className="relative z-30 pb-8 md:pb-12 flex justify-center mt-6 md:mt-10">
+        <div className="relative inline-block">
+          {/* Soft pastel shadow layer */}
+          <div
+            className="absolute inset-0 rounded-2xl"
+            style={{
+              transform: "translate(10px, 10px)",
+              background:
+                "linear-gradient(135deg, rgba(236,72,153,0.18), rgba(99,102,241,0.12))",
+              zIndex: 1,
+              filter: "blur(10px)",
+            }}
+          />
+
+          {/* Cute gradient button */}
+          <button
+            onClick={onLaunch}
+            aria-label="Launch"
+            className="relative z-10 flex items-center gap-3 px-10 md:px-14 py-3 md:py-4 bg-gradient-to-br from-pink-500 to-yellow-500 text-white font-extrabold text-xl md:text-3xl rounded-2xl shadow-[0_10px_30px_rgba(99,102,241,0.18)] transform transition-all duration-300 hover:-translate-y-1 active:scale-95">
+            <span className="tracking-wider">LAUNCH</span>
+          </button>
+        </div>
       </div>
     </div>
   );
